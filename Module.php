@@ -13,14 +13,14 @@
 	use GuzzleHttp\Exception\ClientException;
 	use Module\Provider\Contracts\ProviderInterface;
 	use Opcenter\Dns\Record;
-	use Opcenter\Dns\Services\Linode\Api;
 
 	class Module extends \Dns_Module implements ProviderInterface
 	{
+		use \NamespaceUtilitiesTrait;
+
 		const DNS_TTL = 1800;
 
 		protected $metaCache = [];
-
 		/**
 		 * apex markers are marked with @
 		 */
@@ -36,7 +36,6 @@
 			'TXT',
 			'ANY',
 		];
-		use \NamespaceUtilitiesTrait;
 		// @var array API credentials
 		private $key;
 
@@ -151,14 +150,12 @@
 				$domainid = $this->getZoneId($zone);
 				$api->do('PUT', "domains/${domainid}/records/${id}", $this->formatRecord($new));
 			} catch (ClientException $e) {
-				$reason = \json_decode($e->getResponse()->getBody()->getContents());
-
 				return error("Failed to update record `%s' on zone `%s' (old - rr: `%s', param: `%s'; new - rr: `%s', param: `%s'): %s",
 					$old['name'],
 					$zone,
 					$old['rr'],
 					$old['parameter'], $new['name'] ?? $old['name'], $new['parameter'] ?? $old['parameter'],
-					$reason->errors[0]->message
+					$this->renderMessage($e)
 				);
 			}
 			array_forget($this->zoneCache[$old->getZone()], $this->getCacheKey($old));
@@ -202,10 +199,28 @@
 			} catch (ClientException $e) {
 				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
 
-				return error("Failed to create record `%s' type %s: %s", $fqdn, $rr, $e->getMessage());
+				return error("Failed to create record `%s' type %s: %s", $fqdn, $rr, $this->renderMessage($e));
 			}
 
 			return (bool)$ret;
+		}
+
+		/**
+		 * Extract JSON message if present
+		 *
+		 * @param ClientException $e
+		 * @return string
+		 */
+		private function renderMessage(ClientException $e): string
+		{
+
+			$body = \Error_Reporter::silence(function () use ($e) {
+				return \json_decode($e->getResponse()->getBody()->getContents(), true);
+			});
+			if (!$body || !($reason = array_get($body, 'errors.0.reason'))) {
+				return $e->getMessage();
+			}
+			return $reason;
 		}
 
 		/**
@@ -275,7 +290,7 @@
 					'soa_email' => "hostmaster@${domain}"
 				]);
 			} catch (ClientException $e) {
-				return error("Failed to add zone `%s', error: %s", $domain, $e->getMessage());
+				return error("Failed to add zone `%s', error: %s", $domain, $this->renderMessage($e));
 			}
 			return true;
 		}
@@ -296,7 +311,7 @@
 				}
 				$api->do('DELETE', "domains/${domainid}");
 			} catch (ClientException $e) {
-				return error("Failed to remove zone `%s', error: %s", $domain, $e->getMessage());
+				return error("Failed to remove zone `%s', error: %s", $domain, $this->renderMessage($e));
 			}
 
 			return true;
@@ -320,16 +335,21 @@
 			return $this->metaCache[$domain][$key] ?? null;
 		}
 
+		/**
+		 * Populate zone cache
+		 *
+		 * @param int $pagenr
+		 * @return mixed
+		 */
 		protected function populateZoneMetaCache($pagenr = 1)
 		{
 			// @todo support > 100 domains
 			$api = $this->makeApi();
 			$raw = array_map(function ($zone) {
-				return (array)$zone;
+				return $zone;
 			}, $api->do('GET', 'domains', ['page' => $pagenr]));
 			$this->metaCache = array_merge($this->metaCache, array_combine(array_column($raw['data'], 'domain'), $raw['data']));
-			// Counter to documentation...
-			$pagecnt = \is_array($raw['pages']) ? array_pop($raw['pages']) : $raw['pages'];
+			$pagecnt = $raw['pages'];
 			if ($pagenr < $pagecnt && $raw['data']) {
 				return $this->populateZoneMetaCache(++$pagenr);
 			}
@@ -346,17 +366,33 @@
 			return (string)$this->getZoneMeta($domain, 'id');
 		}
 
+		/**
+		 * CNAME cannot be present in root
+		 *
+		 * @return bool
+		 */
 		protected function hasCnameApexRestriction(): bool
 		{
 			return true;
 		}
 
+		/**
+		 * Create a Linode API client
+		 *
+		 * @return Api
+		 */
 		private function makeApi(): Api
 		{
 			return new Api($this->key);
 		}
 
-		protected function formatRecord(Record $r)
+		/**
+		 * Format a Linode record from apnscp
+		 *
+		 * @param Record $r
+		 * @return array
+		 */
+		protected function formatRecord(Record $r): ?array
 		{
 			$args = [
 				'type' => strtoupper($r['rr']),
@@ -393,6 +429,4 @@
 					fatal("Unsupported DNS RR type `%s'", $r['type']);
 			}
 		}
-
-
 	}
