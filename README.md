@@ -8,7 +8,7 @@ This is a drop-in provider for [apnscp](https://apnscp.com) to enable DNS suppor
 EditDomain -c dns,provider=linode -c dns,key=abcdef1234567890 domain.com
 ```
 
-Where the key is created within Linode. See Linode: [API Key](https://www.linode.com/docs/platform/api/api-key/) for information.
+Where the key is created within Linode. See Linode: [API Key](https://www.linode.com/docs/platform/api/getting-started-with-the-linode-api/) for information.
 
 ## Components
 
