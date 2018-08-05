@@ -1,12 +1,12 @@
 <?php declare(strict_types=1);
 
-/**
- * Copyright (C) Apis Networks, Inc - All Rights Reserved.
- *
- * MIT License
- *
- * Written by Matt Saladna <matt@apisnetworks.com>, August 2018
- */
+	/**
+	 * Copyright (C) Apis Networks, Inc - All Rights Reserved.
+	 *
+	 * MIT License
+	 *
+	 * Written by Matt Saladna <matt@apisnetworks.com>, August 2018
+	 */
 
 	namespace Opcenter\Dns\Providers\Linode;
 
@@ -32,6 +32,7 @@
 			'CNAME',
 			'MX',
 			'NS',
+			'PTR',
 			'SRV',
 			'TXT',
 			'ANY',
@@ -419,6 +420,7 @@
 				case 'CNAME':
 				case 'TXT':
 				case 'NS':
+				case 'PTR':
 					return $args + ['name' => $r['name'], 'target' => $r['parameter']];
 				case 'MX':
 					return $args + ['name'     => $r['name'],
