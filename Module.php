@@ -296,21 +296,6 @@
 			return true;
 		}
 
-		public function add_zone(string $domain, string $ip): bool
-		{
-			if (!parent::add_zone($domain, $ip)) {
-				return false;
-			}
-			for ($i = 0; $i < 10; $i++) {
-				if (null !== $this->getZoneId($domain)) {
-					return true;
-				}
-				sleep(1);
-			}
-			return warn("Zone `%s' added but Linode not reporting authoritative yet", $domain);
-		}
-
-
 		/**
 		 * Remove DNS zone from nameserver
 		 *
