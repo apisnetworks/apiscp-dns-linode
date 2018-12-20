@@ -19,8 +19,6 @@
 		use \NamespaceUtilitiesTrait;
 
 		const DNS_TTL = 1800;
-
-		protected $metaCache = [];
 		/**
 		 * apex markers are marked with @
 		 */
@@ -37,6 +35,7 @@
 			'TXT',
 			'ANY',
 		];
+		protected $metaCache = [];
 		// @var array API credentials
 		private $key;
 
@@ -44,6 +43,132 @@
 		{
 			parent::__construct();
 			$this->key = $this->getServiceValue('dns', 'key', DNS_PROVIDER_KEY);
+		}
+
+		/**
+		 * Add a DNS record
+		 *
+		 * @param string $zone
+		 * @param string $subdomain
+		 * @param string $rr
+		 * @param string $param
+		 * @param int    $ttl
+		 * @return bool
+		 */
+		public function add_record(
+			string $zone,
+			string $subdomain,
+			string $rr,
+			string $param,
+			int $ttl = self::DNS_TTL
+		): bool {
+			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
+				return false;
+			}
+			$api = $this->makeApi();
+			$record = new Record($zone, [
+				'name'      => $subdomain,
+				'rr'        => $rr,
+				'parameter' => $param,
+				'ttl'       => $ttl
+			]);
+
+			try {
+				$zoneid = $this->getZoneId($zone);
+				$ret = $api->do('POST', "domains/${zoneid}/records", $this->formatRecord($record));
+				$this->addCache($record);
+			} catch (ClientException $e) {
+				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
+
+				return error("Failed to create record `%s' type %s: %s", $fqdn, $rr, $this->renderMessage($e));
+			}
+
+			return (bool)$ret;
+		}
+
+		/**
+		 * Remove a DNS record
+		 *
+		 * @param string      $zone
+		 * @param string      $subdomain
+		 * @param string      $rr
+		 * @param string|null $param
+		 * @return bool
+		 */
+		public function remove_record(string $zone, string $subdomain, string $rr, string $param = null): bool
+		{
+			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
+				return false;
+			}
+			$api = $this->makeApi();
+
+			$id = $this->getRecordId($r = new Record($zone,
+				['name' => $subdomain, 'rr' => $rr, 'parameter' => $param]));
+			if (!$id) {
+				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
+
+				return error("Record `%s' (rr: `%s', param: `%s')  does not exist", $fqdn, $rr, $param);
+			}
+
+			try {
+				$domainid = $this->getZoneId($zone);
+				$api->do('DELETE', "domains/${domainid}/records/${id}");
+			} catch (ClientException $e) {
+				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
+
+				return error("Failed to delete record `%s' type %s", $fqdn, $rr);
+			}
+			array_forget($this->zoneCache[$r->getZone()], $this->getCacheKey($r));
+
+			return $api->getResponse()->getStatusCode() === 200;
+		}
+
+		/**
+		 * Add DNS zone to service
+		 *
+		 * @param string $domain
+		 * @param string $ip
+		 * @return bool
+		 */
+		public function add_zone_backend(string $domain, string $ip): bool
+		{
+			/**
+			 * @var Zones $api
+			 */
+			$api = $this->makeApi();
+			try {
+				$resp = $api->do('POST', 'domains', [
+					'domain'    => $domain,
+					'type'      => 'master',
+					'soa_email' => "hostmaster@${domain}"
+				]);
+			} catch (ClientException $e) {
+				return error("Failed to add zone `%s', error: %s", $domain, $this->renderMessage($e));
+			}
+
+			return true;
+		}
+
+		/**
+		 * Remove DNS zone from nameserver
+		 *
+		 * @param string $domain
+		 * @return bool
+		 */
+		public function remove_zone_backend(string $domain): bool
+		{
+			$api = $this->makeApi();
+			try {
+				$domainid = $this->getZoneId($domain);
+				if (!$domainid) {
+					return warn("Domain ID not found - `%s' already removed?", $domain);
+				}
+				$api->do('DELETE', "domains/${domainid}");
+			} catch (ClientException $e) {
+				return error("Failed to remove zone `%s', error: %s", $domain, $this->renderMessage($e));
+			}
+
+			return true;
 		}
 
 		/**
@@ -84,7 +209,9 @@
 					// zone doesn't exist
 					return null;
 				}
-				error("Failed to transfer DNS records from Linode - try again later. Response code: %d", $e->getResponse()->getStatusCode());
+				error("Failed to transfer DNS records from Linode - try again later. Response code: %d",
+					$e->getResponse()->getStatusCode());
+
 				return null;
 			}
 			$this->zoneCache[$domain] = [];
@@ -120,7 +247,80 @@
 			}
 			$axfrrec = implode("\n", $preamble);
 			$this->zoneCache[$domain]['text'] = $axfrrec;
+
 			return $axfrrec;
+		}
+
+		/**
+		 * Create a Linode API client
+		 *
+		 * @return Api
+		 */
+		private function makeApi(): Api
+		{
+			return new Api($this->key);
+		}
+
+		/**
+		 * Get internal Linode zone ID
+		 *
+		 * @param string $domain
+		 * @return null|string
+		 */
+		protected function getZoneId(string $domain): ?string
+		{
+			return (string)$this->getZoneMeta($domain, 'id');
+		}
+
+		/**
+		 * Get zone meta information
+		 *
+		 * @param string $domain
+		 * @param string $key
+		 * @return mixed|null
+		 */
+		private function getZoneMeta(string $domain, string $key = null)
+		{
+			if (!isset($this->metaCache[$domain])) {
+				$this->populateZoneMetaCache();
+			}
+			if (!$key) {
+				return $this->metaCache[$domain] ?? null;
+			}
+
+			return $this->metaCache[$domain][$key] ?? null;
+		}
+
+		/**
+		 * Populate zone cache
+		 *
+		 * @param int $pagenr
+		 * @return mixed
+		 */
+		protected function populateZoneMetaCache($pagenr = 1)
+		{
+			// @todo support > 100 domains
+			$api = $this->makeApi();
+			$raw = array_map(function ($zone) {
+				return $zone;
+			}, $api->do('GET', 'domains', ['page' => $pagenr]));
+			$this->metaCache = array_merge($this->metaCache,
+				array_combine(array_column($raw['data'], 'domain'), $raw['data']));
+			$pagecnt = $raw['pages'];
+			if ($pagenr < $pagecnt && $raw['data']) {
+				return $this->populateZoneMetaCache(++$pagenr);
+			}
+		}
+
+		/**
+		 * Get hosting nameservers
+		 *
+		 * @param string|null $domain
+		 * @return array
+		 */
+		public function get_hosting_nameservers(string $domain = null): array
+		{
+			return ['ns1.linode.com', 'ns2.linode.com', 'ns3.linode.com', 'ns4.linode.com', 'ns5.linode.com'];
 		}
 
 		/**
@@ -166,44 +366,49 @@
 		}
 
 		/**
-		 * Add a DNS record
+		 * Format a Linode record from apnscp
 		 *
-		 * @param string $zone
-		 * @param string $subdomain
-		 * @param string $rr
-		 * @param string $param
-		 * @param int    $ttl
-		 * @return bool
+		 * @param Record $r
+		 * @return array
 		 */
-		public function add_record(
-			string $zone,
-			string $subdomain,
-			string $rr,
-			string $param,
-			int $ttl = self::DNS_TTL
-		): bool {
-			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
-				return false;
+		protected function formatRecord(Record $r): ?array
+		{
+			$args = [
+				'type'    => strtoupper($r['rr']),
+				'ttl_sec' => $r['ttl'] ?? static::DNS_TTL
+			];
+			switch ($args['type']) {
+				case 'A':
+				case 'AAAA':
+				case 'CNAME':
+				case 'TXT':
+				case 'NS':
+				case 'PTR':
+					return $args + ['name' => $r['name'], 'target' => $r['parameter']];
+				case 'MX':
+					return $args + [
+							'name'     => $r['name'],
+							'priority' => (int)$r->getMeta('priority'),
+							'target'   => $r->getMeta('data')
+						];
+				case 'SRV':
+					return $args + [
+							'name'     => $r->getMeta('name'),
+							'protocol' => $r->getMeta('protocol'),
+							'service'  => $r->getMeta('service'),
+							'priority' => $r->getMeta('priority'),
+							'weight'   => $r->getMeta('weight'),
+							'port'     => $r->getMeta('port'),
+							'data'     => $r->getMeta('data')
+						];
+				case 'CAA':
+					return $args + [
+							'tag'    => $r->getMeta('tag'),
+							'target' => $r->getMeta('flags') . ' ' . $r->getMeta('data')
+						];
+				default:
+					fatal("Unsupported DNS RR type `%s'", $r['type']);
 			}
-			$api = $this->makeApi();
-			$record = new Record($zone, [
-				'name'      => $subdomain,
-				'rr'        => $rr,
-				'parameter' => $param,
-				'ttl'       => $ttl
-			]);
-
-			try {
-				$zoneid = $this->getZoneId($zone);
-				$ret = $api->do('POST', "domains/${zoneid}/records", $this->formatRecord($record));
-				$this->addCache($record);
-			} catch (ClientException $e) {
-				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
-
-				return error("Failed to create record `%s' type %s: %s", $fqdn, $rr, $this->renderMessage($e));
-			}
-
-			return (bool)$ret;
 		}
 
 		/**
@@ -221,150 +426,8 @@
 			if (!$body || !($reason = array_get($body, 'errors.0.reason'))) {
 				return $e->getMessage();
 			}
+
 			return $reason;
-		}
-
-		/**
-		 * Remove a DNS record
-		 *
-		 * @param string      $zone
-		 * @param string      $subdomain
-		 * @param string      $rr
-		 * @param string|null $param
-		 * @return bool
-		 */
-		public function remove_record(string $zone, string $subdomain, string $rr, string $param = null): bool
-		{
-			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
-				return false;
-			}
-			$api = $this->makeApi();
-
-			$id = $this->getRecordId($r = new Record($zone,
-				['name' => $subdomain, 'rr' => $rr, 'parameter' => $param]));
-			if (!$id) {
-				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
-
-				return error("Record `%s' (rr: `%s', param: `%s')  does not exist", $fqdn, $rr, $param);
-			}
-
-			try {
-				$domainid = $this->getZoneId($zone);
-				$api->do('DELETE', "domains/${domainid}/records/${id}");
-			} catch (ClientException $e) {
-				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
-
-				return error("Failed to delete record `%s' type %s", $fqdn, $rr);
-			}
-			array_forget($this->zoneCache[$r->getZone()], $this->getCacheKey($r));
-			return $api->getResponse()->getStatusCode() === 200;
-		}
-
-		/**
-		 * Get hosting nameservers
-		 *
-		 * @param string|null $domain
-		 * @return array
-		 */
-		public function get_hosting_nameservers(string $domain = null): array
-		{
-			return ['ns1.linode.com', 'ns2.linode.com', 'ns3.linode.com', 'ns4.linode.com', 'ns5.linode.com'];
-		}
-
-		/**
-		 * Add DNS zone to service
-		 *
-		 * @param string $domain
-		 * @param string $ip
-		 * @return bool
-		 */
-		public function add_zone_backend(string $domain, string $ip): bool
-		{
-			/**
-			 * @var Zones $api
-			 */
-			$api = $this->makeApi();
-			try {
-				$resp = $api->do('POST', 'domains', [
-					'domain' => $domain,
-					'type' => 'master',
-					'soa_email' => "hostmaster@${domain}"
-				]);
-			} catch (ClientException $e) {
-				return error("Failed to add zone `%s', error: %s", $domain, $this->renderMessage($e));
-			}
-			return true;
-		}
-
-		/**
-		 * Remove DNS zone from nameserver
-		 *
-		 * @param string $domain
-		 * @return bool
-		 */
-		public function remove_zone_backend(string $domain): bool
-		{
-			$api = $this->makeApi();
-			try {
-				$domainid = $this->getZoneId($domain);
-				if (!$domainid) {
-					return warn("Domain ID not found - `%s' already removed?", $domain);
-				}
-				$api->do('DELETE', "domains/${domainid}");
-			} catch (ClientException $e) {
-				return error("Failed to remove zone `%s', error: %s", $domain, $this->renderMessage($e));
-			}
-
-			return true;
-		}
-
-		/**
-		 * Get zone meta information
-		 *
-		 * @param string $domain
-		 * @param string $key
-		 * @return mixed|null
-		 */
-		private function getZoneMeta(string $domain, string $key = null)
-		{
-			if (!isset($this->metaCache[$domain])) {
-				$this->populateZoneMetaCache();
-			}
-			if (!$key) {
-				return $this->metaCache[$domain] ?? null;
-			}
-			return $this->metaCache[$domain][$key] ?? null;
-		}
-
-		/**
-		 * Populate zone cache
-		 *
-		 * @param int $pagenr
-		 * @return mixed
-		 */
-		protected function populateZoneMetaCache($pagenr = 1)
-		{
-			// @todo support > 100 domains
-			$api = $this->makeApi();
-			$raw = array_map(function ($zone) {
-				return $zone;
-			}, $api->do('GET', 'domains', ['page' => $pagenr]));
-			$this->metaCache = array_merge($this->metaCache, array_combine(array_column($raw['data'], 'domain'), $raw['data']));
-			$pagecnt = $raw['pages'];
-			if ($pagenr < $pagecnt && $raw['data']) {
-				return $this->populateZoneMetaCache(++$pagenr);
-			}
-		}
-
-		/**
-		 * Get internal Linode zone ID
-		 *
-		 * @param string $domain
-		 * @return null|string
-		 */
-		protected function getZoneId(string $domain): ?string
-		{
-			return (string)$this->getZoneMeta($domain, 'id');
 		}
 
 		/**
@@ -375,60 +438,5 @@
 		protected function hasCnameApexRestriction(): bool
 		{
 			return true;
-		}
-
-		/**
-		 * Create a Linode API client
-		 *
-		 * @return Api
-		 */
-		private function makeApi(): Api
-		{
-			return new Api($this->key);
-		}
-
-		/**
-		 * Format a Linode record from apnscp
-		 *
-		 * @param Record $r
-		 * @return array
-		 */
-		protected function formatRecord(Record $r): ?array
-		{
-			$args = [
-				'type' => strtoupper($r['rr']),
-				'ttl_sec'  => $r['ttl'] ?? static::DNS_TTL
-			];
-			switch ($args['type']) {
-				case 'A':
-				case 'AAAA':
-				case 'CNAME':
-				case 'TXT':
-				case 'NS':
-				case 'PTR':
-					return $args + ['name' => $r['name'], 'target' => $r['parameter']];
-				case 'MX':
-					return $args + ['name'     => $r['name'],
-					                'priority' => (int)$r->getMeta('priority'),
-					                'target'     => $r->getMeta('data')
-						];
-				case 'SRV':
-					return $args + [
-							'name'     => $r->getMeta('name'),
-							'protocol' => $r->getMeta('protocol'),
-							'service'  => $r->getMeta('service'),
-							'priority' => $r->getMeta('priority'),
-							'weight'   => $r->getMeta('weight'),
-							'port'     => $r->getMeta('port'),
-							'data'     => $r->getMeta('data')
-						];
-				case 'CAA':
-					return $args + [
-							'tag'   => $r->getMeta('tag'),
-							'target'  => $r->getMeta('flags') . ' ' . $r->getMeta('data')
-						];
-				default:
-					fatal("Unsupported DNS RR type `%s'", $r['type']);
-			}
 		}
 	}
