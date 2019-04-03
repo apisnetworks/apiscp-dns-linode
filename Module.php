@@ -404,7 +404,7 @@
 							'name'     => $r['name'],
 							'tag'      => $r->getMeta('tag'),
 							// doesn't support flags usage
-							'target'   => $r->getMeta('data')
+							'target'   => trim($r->getMeta('data'), '"')
 						];
 				default:
 					fatal("Unsupported DNS RR type `%s'", $r['type']);
