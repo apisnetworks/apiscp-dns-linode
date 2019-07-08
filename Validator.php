@@ -16,7 +16,7 @@
 
 	class Validator implements ServiceProvider
 	{
-		public function valid(ConfigurationContext $ctx, $var): bool
+		public function valid(ConfigurationContext $ctx, &$var): bool
 		{
 			return ctype_xdigit($var) && static::keyValid((string)$var);
 		}
