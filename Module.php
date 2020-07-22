@@ -168,7 +168,7 @@
 		 * @param string $domain
 		 * @return null|string
 		 */
-		protected function zoneAxfr($domain): ?string
+		protected function zoneAxfr(string $domain): ?string
 		{
 			// @todo hold records in cache and synthesize AXFR
 			$client = $this->makeApi();
@@ -200,7 +200,7 @@
 					// zone doesn't exist
 					return null;
 				}
-				error("Failed to transfer DNS records from Linode - try again later. Response code: %d",
+				error('Failed to transfer DNS records from Linode - try again later. Response code: %d',
 					$e->getResponse()->getStatusCode());
 
 				return null;
@@ -213,15 +213,15 @@
 						$parameter = '0 ' . $r['tag'] . ' ' . $r['target'];
 						break;
 					case 'SRV':
-						$parameter = $r['priority'] . " " . $r['weight'] . " " . $r['port'] . " " . $r['target'];
+						$parameter = $r['priority'] . ' ' . $r['weight'] . ' ' . $r['port'] . ' ' . $r['target'];
 						break;
 					case 'MX':
-						$parameter = $r['priority'] . " " . $r['target'];
+						$parameter = $r['priority'] . ' ' . $r['target'];
 						break;
 					default:
 						$parameter = $r['target'];
 				}
-				$hostname = ltrim($r['name'] . "." . $domain, '.') . '.';
+				$hostname = ltrim($r['name'] . '.' . $domain, '.') . '.';
 				$preamble[] = $hostname . "\t" . $r['ttl_sec'] . "\tIN\t" .
 					$r['type'] . "\t" . $parameter;
 
@@ -293,7 +293,7 @@
 		{
 			// @todo support > 100 domains
 			$api = $this->makeApi();
-			$raw = array_map(function ($zone) {
+			$raw = array_map(static function ($zone) {
 				return $zone;
 			}, $api->do('GET', 'domains', ['page' => $pagenr]));
 			$this->metaCache = array_merge($this->metaCache,
@@ -413,7 +413,7 @@
 		private function renderMessage(ClientException $e): string
 		{
 
-			$body = \Error_Reporter::silence(function () use ($e) {
+			$body = \Error_Reporter::silence(static function () use ($e) {
 				return \json_decode($e->getResponse()->getBody()->getContents(), true);
 			});
 			if (!$body || !($reason = array_get($body, 'errors.0.reason'))) {

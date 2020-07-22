@@ -27,9 +27,9 @@
 				(new Api($key))->do('GET', 'domains');
 			} catch (RequestException $e) {
 				$response = \json_decode($e->getResponse()->getBody()->getContents(), true);
-				$reason = array_get($response, 'errors.0.reason', "Invalid key");
+				$reason = array_get($response, 'errors.0.reason', 'Invalid key');
 
-				return error("Linode key failed: %s", $reason);
+				return error('Linode key failed: %s', $reason);
 			}
 
 			return true;

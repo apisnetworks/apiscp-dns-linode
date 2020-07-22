@@ -57,7 +57,7 @@
 			}
 			$this->lastResponse = $this->client->request($method, $endpoint, [
 				'headers' => [
-					'User-Agent'    => PANEL_BRAND . " " . APNSCP_VERSION,
+					'User-Agent'    => PANEL_BRAND . ' ' . APNSCP_VERSION,
 					'Accept'        => 'application/json',
 					'Authorization' => 'Bearer ' . $this->key
 				],
