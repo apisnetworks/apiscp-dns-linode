@@ -18,7 +18,6 @@
 	{
 		use \NamespaceUtilitiesTrait;
 
-		const DNS_TTL = 1800;
 		/**
 		 * apex markers are marked with @
 		 */
