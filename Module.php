@@ -22,6 +22,9 @@
 		 * apex markers are marked with @
 		 */
 		protected const HAS_ORIGIN_MARKER = false;
+		// hide showing of NS apex
+		public const SHOW_NS_APEX = false;
+
 		protected static $permitted_records = [
 			'A',
 			'AAAA',
@@ -108,7 +111,10 @@
 
 				return error("Failed to delete record `%s' type %s", $fqdn, $rr);
 			}
-			array_forget($this->zoneCache[$r->getZone()], $this->getCacheKey($r));
+
+			array_forget_first($this->zoneCache[$r->getZone()], $this->getCacheKey($r), static function ($v) use ($r) {
+				return $v['id'] === $r['id'];
+			});
 
 			return $api->getResponse()->getStatusCode() === 200;
 		}
@@ -350,7 +356,10 @@
 					$this->renderMessage($e)
 				);
 			}
-			array_forget($this->zoneCache[$old->getZone()], $this->getCacheKey($old));
+			array_forget_first($this->zoneCache[$old->getZone()], $this->getCacheKey($old), static function ($v) use ($old) {
+				return $v['id'] === $old['id'];
+			});
+
 			$this->addCache($new);
 
 			return true;
