@@ -182,10 +182,8 @@
 				if (!$domainid = $this->getZoneId($domain)) {
 					return null;
 				}
+
 				$records = $client->do('GET', "domains/${domainid}/records");
-				if (empty($records['data'])) {
-					return null;
-				}
 				$soa = array_get($this->get_records_external('', 'soa', $domain,
 					$this->get_hosting_nameservers($domain)), 0, []);
 
