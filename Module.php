@@ -62,9 +62,6 @@
 			string $param,
 			int $ttl = self::DNS_TTL
 		): bool {
-			if ($rr === 'TXT' && $param[0] === $param[-1] && $param[0] === '"') {
-				$param = substr($param, 1, -1);
-			}
 			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
 				return false;
 			}
@@ -87,6 +84,27 @@
 
 			return (bool)$ret;
 		}
+
+		protected function canonicalizeRecord(
+			string &$zone,
+			string &$subdomain,
+			string &$rr,
+			string &$param,
+			int &$ttl = null
+		): bool {
+			if (!parent::canonicalizeRecord($zone, $subdomain, $rr, $param,
+				$ttl))
+			{
+				return false;
+			}
+
+			if ($rr === 'TXT' && $param[0] === $param[-1] && $param[0] === '"') {
+				$param = substr($param, 1, -1);
+			}
+
+			return true;
+		}
+
 
 		/**
 		 * @inheritDoc
