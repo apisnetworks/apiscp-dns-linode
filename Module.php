@@ -62,6 +62,9 @@
 			string $param,
 			int $ttl = self::DNS_TTL
 		): bool {
+			if ($rr === 'TXT' && $param[0] === $param[-1] && $param[0] === '"') {
+				$param = substr($param, 1, -1);
+			}
 			if (!$this->canonicalizeRecord($zone, $subdomain, $rr, $param, $ttl)) {
 				return false;
 			}
