@@ -26,10 +26,16 @@
 			try {
 				(new Api($key))->do('GET', 'domains');
 			} catch (RequestException $e) {
-				$response = \json_decode($e->getResponse()->getBody()->getContents(), true);
-				$reason = array_get($response, 'errors.0.reason', 'Invalid key');
+				$reason = $e->getMessage();
+				if (null !== ($response = $e->getResponse())) {
+					$response = \json_decode($response->getBody()->getContents(), true);
+					$reason = array_get($response, 'errors.0.reason', 'Invalid key');
+				}
 
-				return error('Linode key failed: %s', $reason);
+				return error('%(provider)s key validation failed: %(reason)s', [
+					'provider' => 'Linode',
+					'reason'   => $reason
+				]);
 			}
 
 			return true;
