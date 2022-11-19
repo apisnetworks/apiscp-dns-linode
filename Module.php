@@ -428,9 +428,9 @@
 				case 'CAA':
 					return $args + [
 							'name'     => $r['name'],
+							'flags'    => $r->getMeta('flags'),
 							'tag'      => $r->getMeta('tag'),
-							// doesn't support flags usage
-							'target'   => trim($r->getMeta('data'), '"')
+							'target'   => trim($r->getMeta('data'), '".')
 						];
 				default:
 					fatal("Unsupported DNS RR type `%s'", $r['type']);
