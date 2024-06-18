@@ -42,6 +42,16 @@
 		// @var array API credentials
 		private $key;
 
+		const DIG_SHLOOKUP = [
+			'dig',
+			'+norec',
+			'+time=3',
+			'+short',
+			'@%(nameserver)s',
+			'%(hostname)s',
+			'%(rr)s'
+		];
+
 		public function __construct()
 		{
 			parent::__construct();
