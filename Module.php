@@ -42,16 +42,6 @@
 		// @var array API credentials
 		private $key;
 
-		const DIG_SHLOOKUP = [
-			'dig',
-			'+norec',
-			'+time=3',
-			'+short',
-			'@%(nameserver)s',
-			'%(hostname)s',
-			'%(rr)s'
-		];
-
 		public function __construct()
 		{
 			parent::__construct();
@@ -118,7 +108,7 @@
 				return false;
 			}
 
-			if ($rr === 'TXT' && $param[0] === $param[-1] && $param[0] === '"') {
+			if ($rr === 'TXT' && isset($param[0]) && $param[0] === $param[-1] && $param[0] === '"') {
 				$param = substr($param, 1, -1);
 			}
 
