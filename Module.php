@@ -85,7 +85,7 @@
 
 			try {
 				$zoneid = $this->getZoneId($zone);
-				$ret = $api->do('POST', "domains/${zoneid}/records", $this->formatRecord($record));
+				$ret = $api->do('POST', "domains/{$zoneid}/records", $this->formatRecord($record));
 				$record->setMeta('id', $ret['id']);
 				$this->addCache($record);
 			} catch (ClientException $e) {
@@ -139,7 +139,7 @@
 
 			try {
 				$domainid = $this->getZoneId($zone);
-				$api->do('DELETE', "domains/${domainid}/records/${id}");
+				$api->do('DELETE', "domains/{$domainid}/records/{$id}");
 			} catch (ClientException $e) {
 				$fqdn = ltrim(implode('.', [$subdomain, $zone]), '.');
 
@@ -170,7 +170,7 @@
 				$resp = $api->do('POST', 'domains', [
 					'domain'    => $domain,
 					'type'      => 'master',
-					'soa_email' => "hostmaster@${domain}"
+					'soa_email' => "hostmaster@{$domain}"
 				]);
 			} catch (ClientException $e) {
 				return error("Failed to add zone `%s', error: %s", $domain, $this->renderMessage($e));
@@ -193,7 +193,7 @@
 				if (!$domainid) {
 					return warn("Domain ID not found - `%s' already removed?", $domain);
 				}
-				$api->do('DELETE', "domains/${domainid}");
+				$api->do('DELETE', "domains/{$domainid}");
 			} catch (ClientException $e) {
 				return error("Failed to remove zone `%s', error: %s", $domain, $this->renderMessage($e));
 			}
@@ -217,7 +217,7 @@
 					return null;
 				}
 
-				$records = $client->do('GET', "domains/${domainid}/records");
+				$records = $client->do('GET', "domains/{$domainid}/records");
 				$soa = array_get($this->get_records_external('', 'soa', $domain,
 					$this->get_hosting_nameservers($domain)), 0, []);
 
@@ -225,11 +225,11 @@
 				$preamble = [];
 				if ($soa) {
 					$preamble = [
-						"${domain}.\t${ttldef}\tIN\tSOA\t${soa['parameter']}",
+						"{$domain}.\t{$ttldef}\tIN\tSOA\t{$soa['parameter']}",
 					];
 				}
 				foreach ($this->get_hosting_nameservers($domain) as $ns) {
-					$preamble[] = "${domain}.\t${ttldef}\tIN\tNS\t${ns}.";
+					$preamble[] = "{$domain}.\t{$ttldef}\tIN\tNS\t{$ns}.";
 				}
 
 			} catch (ClientException $e) {
@@ -378,7 +378,7 @@
 				$new = $merged->merge($new);
 				$id = $this->getRecordId($old);
 				$domainid = $this->getZoneId($zone);
-				$api->do('PUT', "domains/${domainid}/records/${id}", $this->formatRecord($new));
+				$api->do('PUT', "domains/{$domainid}/records/{$id}", $this->formatRecord($new));
 			} catch (ClientException $e) {
 				return error("Failed to update record `%s' on zone `%s' (old - rr: `%s', param: `%s'; new - rr: `%s', param: `%s'): %s",
 					$old['name'],
