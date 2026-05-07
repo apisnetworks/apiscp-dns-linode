@@ -146,8 +146,8 @@
 				return error("Failed to delete record `%s' type %s", $fqdn, $rr);
 			}
 
-			array_forget_first($this->zoneCache[$r->getZone()], $this->getCacheKey($r), static function ($v) use ($r) {
-				return $v['id'] === $r['id'];
+			array_forget_first($this->zoneCache[$r->getZone()], $this->getCacheKey($r), static function ($v) use ($r, $id) {
+				return $v['id'] === $id;
 			});
 
 			return $api->getResponse()->getStatusCode() === 200;

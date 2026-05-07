@@ -16,6 +16,8 @@
 	class Record extends \Opcenter\Dns\Record
 	{
 
+		protected $id;
+
 		/**
 		 * Override broken CAA formatting in Linode
 		 */
